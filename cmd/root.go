@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/denniskniep/DeviceCodePhishing/pkg/utils"
+	"github.com/h0useh3ad/HeadCode/pkg/utils"
 
 	"github.com/spf13/cobra"
 )
@@ -18,9 +18,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "DeviceCodePhishing",
+	Use:   "HeadCode",
 	Short: "Advanced phishing tool using Device Code Flow",
-	Long: `DeviceCodePhishing is an advanced phishing tool that leverages the Device Code Flow to obtain access tokens.
+	Long: `HeadCode is an advanced phishing tool that leverages the Device Code Flow to obtain access tokens.
 
 This tool allows phishing Azure tokens by automating the device authentication flow, bypassing traditional
 security measures and working even when FIDO authentication is in place.
@@ -35,11 +35,11 @@ Global Flags:
   -h, --help         Display this help message
 
 For help with a specific command, use:
-  DeviceCodePhishing [command] --help
+  HeadCode [command] --help
 
 Examples:
-  DeviceCodePhishing server --help
-  DeviceCodePhishing --version
+  HeadCode server --help
+  HeadCode --version
 `,
 	Version: version,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {

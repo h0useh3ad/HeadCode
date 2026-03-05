@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/denniskniep/DeviceCodePhishing/pkg/blocklist"
-	"github.com/denniskniep/DeviceCodePhishing/pkg/constants"
-	"github.com/denniskniep/DeviceCodePhishing/pkg/entra"
+	"github.com/h0useh3ad/HeadCode/pkg/blocklist"
+	"github.com/h0useh3ad/HeadCode/pkg/constants"
+	"github.com/h0useh3ad/HeadCode/pkg/entra"
 	"github.com/spf13/cobra"
 
 	"golang.org/x/crypto/acme/autocert"
@@ -185,32 +185,32 @@ Available ClientId options for --client-id:
 
 Examples:
   # Using predefined options
-  DeviceCodePhishing server --user-agent chrome-android --client-id msteams
+  HeadCode server --user-agent chrome-android --client-id msteams
   
   # Using custom ClientId  
-  DeviceCodePhishing server --custom-client-id "your-custom-clientid-guid"
+  HeadCode server --custom-client-id "your-custom-clientid-guid"
   
   # With custom path (URL will be /auth)
-  DeviceCodePhishing server --path /auth --client-id azurecli
+  HeadCode server --path /auth --client-id azurecli
   
   # With blocklist
-  DeviceCodePhishing server --blocklist blocklist.txt --client-id office365
+  HeadCode server --blocklist blocklist.txt --client-id office365
   
   # With automatic HTTPS (Let's Encrypt) - allows domain and all subdomains
-  DeviceCodePhishing server --domain example.com --client-id office365
+  HeadCode server --domain example.com --client-id office365
   # This will accept: example.com, login.example.com, api.example.com, etc.
   
   # With custom SSL certificates
-  DeviceCodePhishing server --cert cert.pem --key key.pem --client-id msteams
+  HeadCode server --cert cert.pem --key key.pem --client-id msteams
   
   # Full example with blocklist
-  DeviceCodePhishing server --blocklist blocklist.txt --domain example.com --cert cert.pem --key key.pem
+  HeadCode server --blocklist blocklist.txt --domain example.com --cert cert.pem --key key.pem
 
   # With log file
-  DeviceCodePhishing server --log-file dcp_web.log --client-id msteams
+  HeadCode server --log-file dcp_web.log --client-id msteams
 
   # Full example with blocklist and logging
-  DeviceCodePhishing server --blocklist blocklist.txt --log-file dcp_web.log --domain example.com
+  HeadCode server --blocklist blocklist.txt --log-file dcp_web.log --domain example.com
 
 Blocklist Format:
   The blocklist file should contain one IP address or CIDR range per line.

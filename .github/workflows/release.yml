@@ -52,7 +52,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/denniskniep/device-code-phishing
+          images: ghcr.io/h0useh3ad/headcode
           flavor: |
             latest=true
       -

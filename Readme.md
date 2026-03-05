@@ -1,4 +1,4 @@
-# DeviceCodePhishing
+# HeadCode
 
 ## TL;DR;
 EDIT 19.09.2025: Microsoft fixed it for normal Entra tenants, but still possible for federated Entra tenants.
@@ -16,19 +16,19 @@ Federated Entra tenants are still affected by that technique. The application no
 ## Demo
 https://gist.github.com/user-attachments/assets/bf6d1c2d-7199-4394-824d-e6f57e8136a2
 
-## Description 
-DeviceCodePhishing is an advanced phishing tool, which leverages the Device Code Flow.
+## Description
+HeadCode is an advanced phishing tool, which leverages the Device Code Flow.
 It can be used for phishing access-tokens, which in turn allows to bypass two-factor authentication protection, including accounts that exclusively use FIDO for authentication.
 
-While other tools exist to automate device code phishing attacks, they often come with certain limitations, 
+While other tools exist to automate device code phishing attacks, they often come with certain limitations,
 such as requiring the attacker to convince the victim to open the URL and enter the code within a strict 10-minute time frame.
-The goal of this tool is to overcomes those limitations by automating the process with a headless browser, which initiates the attack 
+The goal of this tool is to overcomes those limitations by automating the process with a headless browser, which initiates the attack
 as soon as the victim clicks on the phishing link.
 
 This attack technique is even more dangerous than attacker-in-the-middle (AitM) proxies, because the
 user **enters their credentials on the original webpage**, making it nearly impossible to detect the phishing attempt based on a suspicious URL.
-Additionally, the victim might not need to authenticate interactively because a session is still active. 
-Therefore, the victim has almost no time to realize that this is not legitimate. 
+Additionally, the victim might not need to authenticate interactively because a session is still active.
+Therefore, the victim has almost no time to realize that this is not legitimate.
 And not to forget that Device Code Flow is undermining FIDO's phishing resistance!
 
 Currently, this tool is limited to targeting Microsoft Azure Entra users, but the underlying technique is not restricted to any specific vendor.
@@ -41,34 +41,34 @@ For more details, check out the blog post: [Phishing despite FIDO, leveraging a 
 3. When the URL is opened, a headless browser is started, performing the following automated steps:
    - Starts the Device Code Flow with `<tenant>` and `<clientId>`
    - Opens the device-code webpage and enters the corresponding user-code
-   - The device-code webpage forwards to the URL for interactive authentication (By clicking on "Can't access your account" and immediately navigating back by clicking the cancel button, see [here](https://github.com/denniskniep/DeviceCodePhishing/blob/main/pkg/entra/devicecode.go#L101))
+   - The device-code webpage forwards to the URL for interactive authentication (By clicking on "Can't access your account" and immediately navigating back by clicking the cancel button, see [here](https://github.com/h0useh3ad/HeadCode/blob/main/pkg/entra/devicecode.go#L101))
    - Returns the URL for interactive authentication as a redirect to the victim
 4. The victim is redirected to the authentication URL
 5. The victim completes the authentication
 6. The attacker is authenticated
 
-A demo video of the flow can be seen [here](#demo)  
+A demo video of the flow can be seen [here](#demo)
 
 ## Install
-Download appropriate binary from [Releases](https://github.com/denniskniep/DeviceCodePhishing/releases)
+Download appropriate binary from [Releases](https://github.com/h0useh3ad/HeadCode/releases)
 or install via go using following command:
 ```shell
-go install github.com/denniskniep/DeviceCodePhishing@v1.0.1
+go install github.com/h0useh3ad/HeadCode@latest
 ```
 
 ## Start the phishing server
 
-By default, it runs with tenant set to `common` and with the AuthenticationBroker ClientId `29d9ed98-a469-4536-ade2-f981bc1d605e`
+By default, it runs with the AuthenticationBroker ClientId `29d9ed98-a469-4536-ade2-f981bc1d605e`
 ```shell
-DeviceCodePhishing server
+HeadCode server --target-domain <domain>
 ```
-Use the args if one want to define a specific tenant, a different clientId or a custom userAgent
+Use the args if one want to define a different clientId or a custom userAgent
 ```shell
-DeviceCodePhishing server --tenant <tenantId> --client-id <clientId> --user-agent <userAgent> 
+HeadCode server --target-domain <domain> --client-id <clientId> --user-agent <userAgent>
 ```
 For further help on syntax or how to use arguments execute:
 ```shell
-DeviceCodePhishing server --help
+HeadCode server --help
 ```
 
 ## Use
@@ -92,28 +92,28 @@ Once you have successfully obtained tokens, you can use them with other attack t
 * https://github.com/secureworks/family-of-client-ids-research
 
 
-## Build it yourself 
+## Build it yourself
 ```shell
 go build main.go
 ```
 
 ```shell
-./main server
+./main server --target-domain <domain>
 ```
 
 ## Run with Docker
 ```shell
-docker run -p 8080:8080 ghcr.io/denniskniep/device-code-phishing:v1.0.1
+docker run -p 8080:8080 ghcr.io/h0useh3ad/headcode:latest
 ```
 
 
 ## Build & Run it yourself with Docker
 ```shell
-docker build . -t device-code-phishing
+docker build . -t headcode
 ```
 
 ```shell
-docker run -p 8080:8080 device-code-phishing
+docker run -p 8080:8080 headcode
 ```
 
 ## Disclaimer

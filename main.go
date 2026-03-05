@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/denniskniep/DeviceCodePhishing/cmd"
+	"github.com/h0useh3ad/HeadCode/cmd"
 )
 
 func main() {

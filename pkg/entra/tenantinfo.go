@@ -3,7 +3,7 @@ package entra
 import (
 	"encoding/json"
 	"errors"
-	"github.com/denniskniep/DeviceCodePhishing/pkg/utils"
+	"github.com/h0useh3ad/HeadCode/pkg/utils"
 	"net/url"
 	"strings"
 

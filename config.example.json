@@ -1,0 +1,24 @@
+{
+    "_comment": "HeadCode server configuration - copy to config.json and edit for your engagement",
+
+    "target_domain": "contoso.com",
+    "client_id": "msteams",
+    "user_agent": "edge-macos",
+
+    "address": ":8080",
+    "path": "/lure",
+
+    "trusted_proxy_header": "frontdoor",
+    "blocklist": "",
+
+    "log_file": "headcode.log",
+    "token_file": "tokens.txt",
+    "verbose": false,
+
+    "domain": "",
+    "cert": "",
+    "key": "",
+
+    "custom_client_id": "",
+    "custom_user_agent": ""
+}

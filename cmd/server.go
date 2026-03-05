@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -80,8 +81,27 @@ var (
 	logFile            string
 	tokenFile          string
 	trustedProxyHeader string
+	configFile         string
 	tenantInfo         *entra.TenantInfo
 )
+
+type serverConfig struct {
+	Address            string `json:"address"`
+	TargetDomain       string `json:"target_domain"`
+	ClientId           string `json:"client_id"`
+	CustomClientId     string `json:"custom_client_id"`
+	UserAgent          string `json:"user_agent"`
+	CustomUserAgent    string `json:"custom_user_agent"`
+	Path               string `json:"path"`
+	Domain             string `json:"domain"`
+	Cert               string `json:"cert"`
+	Key                string `json:"key"`
+	Blocklist          string `json:"blocklist"`
+	TrustedProxyHeader string `json:"trusted_proxy_header"`
+	LogFile            string `json:"log_file"`
+	TokenFile          string `json:"token_file"`
+	Verbose            bool   `json:"verbose"`
+}
 
 func init() {
 	rootCmd.AddCommand(runCmd)
@@ -99,6 +119,7 @@ func init() {
 	runCmd.Flags().StringVarP(&logFile, "log-file", "l", "", "File to write logs to (default is stdout only)")
 	runCmd.Flags().StringVar(&tokenFile, "token-file", "", "File to write captured tokens to (restricted permissions, 0600)")
 	runCmd.Flags().StringVar(&trustedProxyHeader, "trusted-proxy-header", "", "Trusted proxy preset for client IP resolution: frontdoor, cloudfront (default: use RemoteAddr)")
+	runCmd.Flags().StringVar(&configFile, "config", "", "Path to JSON config file (flags override config file values)")
 }
 
 var runCmd = &cobra.Command{
@@ -235,6 +256,11 @@ Note: When using --domain, the domain must be properly configured to point to th
 Note: With --domain, all subdomains are automatically accepted
 Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if both are specified`,
 	Run: func(cmd *cobra.Command, args []string) {
+
+		// Load config file if specified (flags take precedence)
+		if configFile != "" {
+			loadConfigFile(cmd, configFile)
+		}
 
 		// Configure logging first
 		var logHandlers []slog.Handler
@@ -600,6 +626,48 @@ func writeTokensToFile(tokenFile string, result *entra.AuthenticationResult, use
 	fmt.Fprintf(f, "===\n\n")
 
 	slog.Info("Tokens written to file", "file", tokenFile)
+}
+
+func loadConfigFile(cmd *cobra.Command, path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		slog.Error("Failed to read config file", "file", path, "error", err)
+		os.Exit(1)
+	}
+
+	var cfg serverConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		slog.Error("Failed to parse config file", "file", path, "error", err)
+		os.Exit(1)
+	}
+
+	// Apply config values only where the flag was not explicitly set
+	setIfNotChanged := func(name, value string) {
+		if value != "" && !cmd.Flags().Changed(name) {
+			_ = cmd.Flags().Set(name, value)
+		}
+	}
+
+	setIfNotChanged("address", cfg.Address)
+	setIfNotChanged("target-domain", cfg.TargetDomain)
+	setIfNotChanged("client-id", cfg.ClientId)
+	setIfNotChanged("custom-client-id", cfg.CustomClientId)
+	setIfNotChanged("user-agent", cfg.UserAgent)
+	setIfNotChanged("custom-user-agent", cfg.CustomUserAgent)
+	setIfNotChanged("path", cfg.Path)
+	setIfNotChanged("domain", cfg.Domain)
+	setIfNotChanged("cert", cfg.Cert)
+	setIfNotChanged("key", cfg.Key)
+	setIfNotChanged("blocklist", cfg.Blocklist)
+	setIfNotChanged("trusted-proxy-header", cfg.TrustedProxyHeader)
+	setIfNotChanged("log-file", cfg.LogFile)
+	setIfNotChanged("token-file", cfg.TokenFile)
+
+	if cfg.Verbose && !cmd.Flags().Changed("verbose") {
+		verbose = true
+	}
+
+	slog.Info("Loaded config file", "file", path)
 }
 
 func resolveTrustedHeaders(preset string) []string {

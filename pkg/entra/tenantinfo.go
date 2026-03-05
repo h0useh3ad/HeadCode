@@ -78,6 +78,7 @@ func getUserRealmInfo(upn string) (*UserRealmInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errMsg := "Request failed with status code:" + resp.Status
@@ -100,6 +101,7 @@ func getOidcInfo(domain string) (*OidcInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errMsg := "Request failed with status code:" + resp.Status

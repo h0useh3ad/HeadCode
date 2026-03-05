@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 type DeviceAuth struct {
@@ -46,6 +46,7 @@ func RequestDeviceAuth(tenant string, clientId string, scopes []string) (*Device
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		errMsg := "Request failed with status code:" + resp.Status
@@ -68,6 +69,7 @@ func RequestToken(tenant string, clientId string, deviceAuth *DeviceAuth) (*Auth
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		if resp.StatusCode == http.StatusBadRequest {
@@ -98,7 +100,7 @@ func RequestToken(tenant string, clientId string, deviceAuth *DeviceAuth) (*Auth
 	return &authResult, nil
 }
 
-func EnterDeviceCodeWithHeadlessBrowser(userCode string, tenantInfo *TenantInfo, userAgent string) (string, error) {
+func EnterDeviceCodeWithHeadlessBrowser(deviceAuth *DeviceAuth, userAgent string) (string, error) {
 	allocatorOpts := chromedp.DefaultExecAllocatorOptions[:]
 	allocatorOpts = append(allocatorOpts, chromedp.Flag("headless", true))
 	allocatorOpts = append(allocatorOpts, chromedp.UserAgent(userAgent))
@@ -111,58 +113,47 @@ func EnterDeviceCodeWithHeadlessBrowser(userCode string, tenantInfo *TenantInfo,
 	defer cancel()
 
 	var finalUrl string
+	var aadTitleHint []*cdp.Node
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(`https://microsoft.com/devicelogin`),
 
 		chromedp.WaitVisible(`#idSIButton9`),
-		chromedp.SendKeys(`#otc`, userCode),
+		chromedp.SendKeys(`#otc`, deviceAuth.UserCode),
 		chromedp.Click(`#idSIButton9`),
 
-		chromedp.WaitVisible(`//input[@name="loginfmt"]`, chromedp.BySearch),
-		chromedp.WaitVisible(`//input[@type="submit"]`, chromedp.BySearch),
-		chromedp.SendKeys(`//input[@name="loginfmt"]`, tenantInfo.ExampleUpn, chromedp.BySearch),
-		chromedp.Click(`//input[@type="submit"]`, chromedp.BySearch),
+		chromedp.WaitVisible(`#cantAccessAccount`),
+		chromedp.Click(`#cantAccessAccount`),
+
+		chromedp.WaitVisible(`#aadTitleHint, #ContentPlaceholderMainContent_ButtonCancel`),
+		chromedp.Nodes(`aadTitleHint`, &aadTitleHint, chromedp.AtLeast(0)),
 	)
 
-	waitTimeIntervalMs := 10
-	waitTimeMaxMs := 10000
-	waitTimeCurrentMs := 0
-	for waitTimeCurrentMs <= waitTimeMaxMs {
+	if err != nil {
+		return "", err
+	}
 
-		time.Sleep(time.Duration(waitTimeIntervalMs) * time.Millisecond)
-		err = chromedp.Run(ctx,
-			chromedp.Location(&finalUrl),
+	if len(aadTitleHint) > 0 {
+		err := chromedp.Run(ctx,
+			chromedp.WaitVisible(`#aadTitleHint`),
+			chromedp.Click(`#aadTitleHint`),
 		)
-		waitTimeCurrentMs = waitTimeCurrentMs + waitTimeIntervalMs
 
 		if err != nil {
 			return "", err
 		}
-
-		finalUrlParsed, err := url.Parse(finalUrl)
-		if err != nil {
-			return "", err
-		}
-
-		if strings.EqualFold(finalUrlParsed.Host, tenantInfo.UserRealmInfo.getFederatedAuthURLHost()) {
-			return removeUpn(finalUrlParsed, tenantInfo.ExampleUpn)
-		}
 	}
 
-	return "", errors.New("No redirect to FederatedAuthURL " + tenantInfo.UserRealmInfo.getFederatedAuthURLHost() + " found")
-}
+	err = chromedp.Run(ctx,
+		chromedp.WaitVisible(`#ContentPlaceholderMainContent_ButtonCancel`),
+		chromedp.Click(`#ContentPlaceholderMainContent_ButtonCancel`),
 
-func removeUpn(location *url.URL, upn string) (string, error) {
-	queryParameters := location.Query()
+		chromedp.WaitVisible(`#cantAccessAccount`),
+		chromedp.Location(&finalUrl),
+	)
 
-	for key, values := range location.Query() {
-		for _, val := range values {
-			if strings.EqualFold(val, upn) {
-				queryParameters.Del(key)
-				slog.Info("Removed Queryparameter '" + key + "'")
-			}
-		}
+	if err != nil {
+		return "", err
 	}
-	location.RawQuery = queryParameters.Encode()
-	return location.String(), nil
+
+	return finalUrl, nil
 }

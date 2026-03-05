@@ -16,7 +16,7 @@ type DeviceAuth struct {
 	DeviceCode      string `json:"device_code"`
 	UserCode        string `json:"user_code"`
 	VerificationUri string `json:"verification_uri"`
-	ExpiredIn       int    `json:"expires_in"`
+	ExpiresIn       int    `json:"expires_in"`
 	Interval        int    `json:"interval"`
 }
 

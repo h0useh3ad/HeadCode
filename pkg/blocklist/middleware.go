@@ -9,23 +9,20 @@ import (
 )
 
 // Middleware returns an HTTP middleware that checks the blocklist
-func Middleware(b *Blocklist) func(http.Handler) http.Handler {
+func Middleware(b *Blocklist, trustedHeaders []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get the real client IP, considering proxy headers
-			clientIP := GetClientIP(r)
+			clientIP := GetClientIP(r, trustedHeaders)
 
 			if b.IsBlocked(clientIP) {
-				// Multiple log levels to make blocked requests more visible
-				slog.Warn("🚫 BLOCKED REQUEST",
+				slog.Warn("BLOCKED REQUEST",
 					"ip", clientIP,
 					"path", r.URL.Path,
 					"method", r.Method,
 					"user_agent", r.UserAgent(),
 					"reason", "IP in blocklist")
 
-				// Also log to stdout for immediate visibility
-				fmt.Printf("\n🚫 BLOCKED: IP %s tried to access %s\n", clientIP, r.URL.Path)
+				fmt.Printf("\nBLOCKED: IP %s tried to access %s\n", clientIP, r.URL.Path)
 
 				http.Error(w, "Forbidden", http.StatusForbidden)
 				return
@@ -36,28 +33,16 @@ func Middleware(b *Blocklist) func(http.Handler) http.Handler {
 	}
 }
 
-// getClientIP attempts to get the real client IP address
-func GetClientIP(r *http.Request) string {
-	// Check for proxy headers
-	clientIP := r.Header.Get("CF-Connecting-IP") // Cloudflare
-	if clientIP != "" {
-		return clientIP
-	}
-
-	clientIP = r.Header.Get("True-Client-IP") // Some proxies
-	if clientIP != "" {
-		return clientIP
-	}
-
-	clientIP = r.Header.Get("X-Real-IP") // Nginx proxy/FastCGI
-	if clientIP != "" {
-		return clientIP
-	}
-
-	clientIP = r.Header.Get("X-Forwarded-For") // Most proxies/load balancers
-	if clientIP != "" {
+// GetClientIP extracts the real client IP address.
+// Only headers listed in trustedHeaders are checked; if none are configured,
+// it falls back to RemoteAddr.
+func GetClientIP(r *http.Request, trustedHeaders []string) string {
+	for _, header := range trustedHeaders {
+		clientIP := r.Header.Get(header)
+		if clientIP == "" {
+			continue
+		}
 		// X-Forwarded-For can contain multiple IPs (comma-separated)
-		// The first one is the original client IP
 		if idx := strings.Index(clientIP, ","); idx != -1 {
 			clientIP = clientIP[:idx]
 		}
@@ -65,6 +50,6 @@ func GetClientIP(r *http.Request) string {
 	}
 
 	// Fall back to RemoteAddr
-	clientIP, _, _ = net.SplitHostPort(r.RemoteAddr)
+	clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return clientIP
 }

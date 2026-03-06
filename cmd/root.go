@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
@@ -43,14 +42,6 @@ Examples:
 `,
 	Version: version,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-		slog.SetDefault(logger)
-		slog.SetLogLoggerLevel(slog.LevelInfo)
-
-		if verbose {
-			slog.SetLogLoggerLevel(slog.LevelDebug)
-		}
-
 		// Only print banner if not showing help, version, or similar
 		commandPath := cmd.CommandPath()
 		if !noBanner &&

@@ -262,9 +262,14 @@ Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if b
 			loadConfigFile(cmd, configFile)
 		}
 
-		// Configure logging first
+		// Configure logging with dynamic level
+		var logLevel slog.LevelVar
+		if verbose {
+			logLevel.Set(slog.LevelDebug)
+		}
+
 		var logHandlers []slog.Handler
-		stdoutHandler := slog.NewTextHandler(os.Stdout, nil)
+		stdoutHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &logLevel})
 		logHandlers = append(logHandlers, stdoutHandler)
 
 		// If log file is specified, add file handler
@@ -275,19 +280,17 @@ Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if b
 				os.Exit(1)
 			}
 
-			fileHandler := slog.NewTextHandler(file, nil)
+			fileHandler := slog.NewTextHandler(file, &slog.HandlerOptions{Level: &logLevel})
 			logHandlers = append(logHandlers, fileHandler)
-
-			// Create a custom handler that writes to both stdout and file
-			logger := slog.New(&multiHandler{handlers: logHandlers})
-			slog.SetDefault(logger)
-
-			slog.Info("Logging to file enabled", "file", logFile)
 		}
 
-		// Set log level based on verbose flag
-		if verbose {
-			slog.SetLogLoggerLevel(slog.LevelDebug)
+		// Set default logger
+		if len(logHandlers) > 1 {
+			logger := slog.New(&multiHandler{handlers: logHandlers})
+			slog.SetDefault(logger)
+			slog.Info("Logging to file enabled", "file", logFile)
+		} else {
+			slog.SetDefault(slog.New(logHandlers[0]))
 		}
 
 		// Determine which user agent to use

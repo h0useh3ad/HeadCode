@@ -23,7 +23,7 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-const EdgeOnWindows string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 Edg/135.0.0.0"
+const EdgeOnWindows string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0"
 const MsAuthenticationBroker string = "29d9ed98-a469-4536-ade2-f981bc1d605e"
 
 type multiHandler struct {
@@ -133,35 +133,37 @@ var runCmd = &cobra.Command{
 	Long: `Starts the phishing server. Listens by default on http://localhost:8080/lure
 
 Available User-Agent options for --user-agent:
-  firefox-android        - Firefox on Android
-  chrome-android         - Chrome on Android
-  edge-android          - Edge on Android
-  android-browser       - Default Android browser
-  firefox-macos         - Firefox on macOS
-  chrome-macos          - Chrome on macOS
-  edge-macos            - Edge on macOS
-  safari-macos          - Safari on macOS
-  chrome-desktop        - Chrome on Windows
-  ie11                  - Internet Explorer 11
-  firefox-windows       - Firefox on Windows
-  edge-legacy           - Legacy Edge on Windows
-  edge-ios              - Edge on iOS
-  chrome-ios            - Chrome on iOS
-  safari-ios            - Safari on iOS
-  firefox-ios           - Firefox on iOS
-  firefox-linux         - Firefox on Linux
-  chrome-linux          - Chrome on Linux
-  edge-linux            - Edge on Linux
-  brave-linux           - Brave on Linux
-  vivaldi-linux         - Vivaldi on Linux
-  opera-linux           - Opera on Linux
-  chromium-linux        - Chromium on Linux
-  konqueror-linux       - Konqueror on Linux
-  firefox-os2           - Firefox on OS/2
-  seamonkey-os2         - SeaMonkey on OS/2
-  chromplus-os2         - ChromePlus on OS/2
-  qt-browser-os2        - Qt Browser on OS/2
-  netfront-os2          - NetFront on OS/2
+  Windows:
+    edge-windows          - Edge on Windows (Chromium)
+    chrome-windows        - Chrome on Windows
+    firefox-windows       - Firefox on Windows
+    brave-windows         - Brave on Windows
+    opera-windows         - Opera on Windows
+  macOS:
+    edge-macos            - Edge on macOS
+    chrome-macos          - Chrome on macOS
+    firefox-macos         - Firefox on macOS
+    safari-macos          - Safari on macOS
+    brave-macos           - Brave on macOS
+  Linux:
+    edge-linux            - Edge on Linux
+    chrome-linux          - Chrome on Linux
+    firefox-linux         - Firefox on Linux
+    brave-linux           - Brave on Linux
+    opera-linux           - Opera on Linux
+  iOS:
+    edge-ios              - Edge on iOS
+    chrome-ios            - Chrome on iOS
+    safari-ios            - Safari on iOS
+    firefox-ios           - Firefox on iOS
+  Android:
+    edge-android          - Edge on Android
+    chrome-android        - Chrome on Android
+    firefox-android       - Firefox on Android
+    samsung-android       - Samsung Internet on Android
+  iPad:
+    safari-ipad           - Safari on iPad
+    chrome-ipad           - Chrome on iPad
 
 Available ClientId options for --client-id:
   msauthbroker          - Microsoft Authentication Broker (default)

@@ -13,6 +13,7 @@
 
     "log_file": "headcode.log",
     "token_file": "tokens.txt",
+    "slack_webhook": "",
     "verbose": false,
 
     "domain": "",

